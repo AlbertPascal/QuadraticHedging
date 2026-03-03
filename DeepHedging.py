@@ -1,43 +1,9 @@
-# =============================================================================
-# Reproducibility setup
-# -----------------------------------------------------------------------------
-# The following configuration enforces deterministic behavior across Python,
-# NumPy and TensorFlow to ensure full reproducibility of numerical results.
-#
-#
-# IMPORTANT:
-# PYTHONHASHSEED=1 must be set BEFORE starting Python, otherwise hash-based
-# operations (e.g. dictionary ordering) may still introduce randomness.
-#
-#
-# NOTE:
-# - This significantly reduces performance (single-threaded execution,
-#   deterministic kernels, disabled oneDNN optimizations).
-# - Use primarily for experiments, comparisons and thesis results.
-# - For production or large-scale training, consider relaxing these settings.
-# =============================================================================
-
 import os
+
 seed = 1
-
-#
-#os.environ["PYTHONHASHSEED"] = str(seed)
-
-# PYTHONHASHSEED=1
-
-# TensorFlow determinism
+os.environ["PYTHONHASHSEED"] = str(seed)
 os.environ["TF_DETERMINISTIC_OPS"] = "1"
-os.environ["TF_NUM_INTRAOP_THREADS"] = "1"
-os.environ["TF_NUM_INTEROP_THREADS"] = "1"
-
-# CPU thread pools (NumPy/SciPy/BLAS)
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-
-# CPU kernel selection stability 
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+os.environ["TF_CUDNN_DETERMINISTIC"] = "1"
 
 import random
 import numpy as np
@@ -45,17 +11,18 @@ import tensorflow as tf
 
 
 tf.config.experimental.enable_op_determinism()
+#tf.config.threading.set_intra_op_parallelism_threads(1)
+#tf.config.threading.set_inter_op_parallelism_threads(1)
 
 random.seed(seed)
-
 np.random.seed(seed)
 tf.random.set_seed(seed)
 
 
 from tensorflow.keras.layers import Input, Dense, TimeDistributed, Subtract, Lambda, Flatten, Dot
 from tensorflow.keras.models import Model
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-#from tensorflow.keras.callbacks import ModelCheckpoint
+#from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.callbacks import ModelCheckpoint
 from scipy.io import loadmat, savemat
 
 
@@ -179,36 +146,40 @@ for N in N_sim:
     
     
     # define callbacks --  in particular restore_best_weights
-    callbacks = [
-       ReduceLROnPlateau(
-           monitor="loss",
-           factor=0.5,
-           patience=8,
-           min_lr=1e-6,
-           verbose=1
-       ),
-       EarlyStopping(
-           monitor="loss",
-           patience=15,
-           min_delta=1e-4,
-           restore_best_weights=True,
-           verbose=1
-       ),
-    ]
-    
-    # ckpt_path = f"tmp_{Case}_{Q}_N_{N}.weights.h5"
-    
     # callbacks = [
-    # ModelCheckpoint(
-    #     filepath=ckpt_path,
-    #     monitor="loss",
-    #     save_best_only=True,
-    #     save_weights_only=True,
-    #     mode="min",
-    #     verbose=1)]
+    #    ReduceLROnPlateau(
+    #        monitor="loss",
+    #        factor=0.5,
+    #        patience=8,
+    #        min_lr=1e-6,
+    #        verbose=1
+    #    ),
+    #    EarlyStopping(
+    #        monitor="loss",
+    #        patience=15,
+    #        min_delta=1e-4,
+    #        restore_best_weights=True,
+    #        verbose=1
+    #    ),
+    # ]
+    
+    ckpt_path = f"tmp_{Case}_{Q}_N_{N}.weights.h5"
+    
+    callbacks = [
+    ModelCheckpoint(
+        filepath=ckpt_path,
+        monitor="loss",
+        save_best_only=True,
+        save_weights_only=True,
+        mode="min",
+        verbose=1)]
 
     
-
+    
+    
+    
+    
+    
     
     ############################
     # Define model all (full path C_t, dC, Phi, C_T) - run after training for full diagnostics
@@ -241,7 +212,7 @@ for N in N_sim:
     # fit model
     model_CT.fit([Obs_np, Incr_np, Vex_np], y0,epochs=epochs, batch_size=batch_size,callbacks=callbacks,shuffle=True,verbose=1)
     
-   # model_CT.load_weights(ckpt_path)   # <-- BESTE weights wiederherstellen
+    model_CT.load_weights(ckpt_path)   # <-- BESTE weights wiederherstellen
     
     # in-sample evaluation for sanity checks (not exported)
     C_path_pred, dC_pred, Phi_pred, CT_pred = model_all.predict([Obs_np, Incr_np, Vex_np])
